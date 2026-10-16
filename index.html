@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect Buildium · Kompas</title>
+<meta name="description" content="Deck Auth Component — Kompas / Buildium login-first workflow.">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#101828;--muted:#667085;--brand:#2a5bd7;--line:#e4e7ec}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);
+  min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px}
+.wrap{width:100%;max-width:520px}
+.head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.brand{font-weight:800;font-size:18px;letter-spacing:-.02em}
+.badge{font-size:11px;font-weight:600;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px;box-shadow:0 1px 2px rgba(16,24,40,.04),0 12px 32px -18px rgba(16,24,40,.25);overflow:hidden}
+.intro{padding:20px 18px 6px}
+.intro h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}
+.intro p{margin:0;color:var(--muted);font-size:14px}
+#deck-frame{width:100%;min-height:560px;border:0;border-radius:12px;background:#fff;display:block}
+.state{display:flex;align-items:center;gap:12px;padding:28px 20px;color:var(--muted);font-size:14px}
+.spin{width:20px;height:20px;border-radius:50%;border:3px solid #e4e7ec;border-top-color:var(--brand);animation:s .9s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+.err{display:none;margin:0 10px 10px;background:#fef3f2;color:#b42318;border:1px solid #fecdca;padding:12px 14px;border-radius:12px;font-size:14px}
+.foot{margin-top:14px;text-align:center;color:var(--muted);font-size:12px}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <span class="brand">Kompas</span>
+    <span class="badge">Buildium connection</span>
+  </div>
+  <div class="card">
+    <div class="intro">
+      <h1>Connect your Buildium account</h1>
+      <p>Sign in to Buildium. We'll log in, then extract tenants and download lease files.</p>
+    </div>
+    <div id="state" class="state"><span class="spin"></span><span id="state-label">Preparing a secure session…</span></div>
+    <div id="err" class="err"></div>
+    <iframe id="deck-frame" hidden title="Connect Buildium" allow="clipboard-write"></iframe>
+  </div>
+  <div class="foot">Powered by Deck · source <span class="mono">src_ysPZvFxAKUN3oawp</span> · workflow <span class="mono">wflo_wdlzc1wtbutpPZ50</span></div>
+</div>
+
+<script>
+const AUTH_ORIGIN = "https://auth.components.deck.co";
+const SOURCE_ID   = "src_ysPZvFxAKUN3oawp";                 // Buildium (signin.managebuilding.com)
+const WORKFLOW_ID = "wflo_wdlzc1wtbutpPZ50";               // login -> extract_tenants -> download_lease_files
+const params = new URLSearchParams(location.search);
+
+function showErr(msg){ const e=document.getElementById("err"); e.textContent=msg; e.style.display="block"; document.getElementById("state").style.display="none"; }
+
+async function getToken(){
+  const t = params.get("token"); if (t) return t;
+  const r = await fetch("token.json?cb=" + Date.now(), {cache:"no-store"});
+  if (!r.ok) throw new Error("token.json HTTP " + r.status);
+  const j = await r.json(); if (!j || !j.token) throw new Error("no token in token.json");
+  return j.token;
+}
+
+(async function launch(){
+  let token;
+  try { token = await getToken(); }
+  catch(e){ return showErr("Couldn't load a session token (" + (e.message||e) + "). Open with ?token=tk_… or publish token.json."); }
+  const f = document.getElementById("deck-frame");
+  document.getElementById("state").style.display = "none";
+  f.hidden = false; f.src = AUTH_ORIGIN + "/";
+  window.addEventListener("message", (e) => {
+    if (e.origin !== AUTH_ORIGIN) return;
+    const m = e.data || {};
+    if (m.type === "READY") {
+      f.contentWindow.postMessage({ type:"INIT", payload:{
+        token, sourceId:[SOURCE_ID], sourceConfig:null, credentialId:null,
+        externalId:"kompas_buildium_" + Date.now(),
+        taskId:null, taskInput:null, workflowId:WORKFLOW_ID, workflowInput:null, closeAfterStep:null,
+        showStepProgress:true, appearance:{ theme:"default", variables:{ colorPrimary:"#2a5bd7", borderRadius:"10px" } },
+        taskRunView:"status", language:"en-US", showCloseButton:false, credentialPersistence:false, mode:"auth" } }, AUTH_ORIGIN);
+    } else if (m.type === "RESIZE" && m.payload && m.payload.height) {
+      f.style.height = Math.max(520, m.payload.height) + "px";
+    } else if (m.type === "SUCCESS") {
+      const p = m.payload || {};
+      showSuccess(p);
+    } else if (m.type === "ERROR") {
+      const p = m.payload || {}; showErr("Connection error: " + (p.code||"") + " " + (p.message||""));
+    }
+  });
+})();
+
+function showSuccess(p){
+  const f=document.getElementById("deck-frame"); f.hidden=true;
+  const s=document.getElementById("state"); s.style.display="flex"; s.innerHTML=
+    '<span>✅ Connected. Workflow started — run <span class="mono">'+(p.workflowRunId||"-")+'</span>, credential <span class="mono">'+(p.credentialId||"-")+'</span>.</span>';
+}
+</script>
+</body>
+</html>
